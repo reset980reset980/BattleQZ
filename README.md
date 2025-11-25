@@ -123,4 +123,5 @@ DELETE /api/quizzes/:index   # 퀴즈 삭제
 ## 📄 라이선스
 
 -MIT License
+
 -박권

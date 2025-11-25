@@ -85,6 +85,15 @@ app.delete('/api/quizzes/:index', (req, res) => {
   }
 });
 
+app.delete('/api/quizzes', (req, res) => {
+  try {
+    const count = gameManager.deleteAllQuizzes();
+    res.json({ success: true, message: `All ${count} quizzes deleted`, count });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
   gameManager.handleConnection(socket);

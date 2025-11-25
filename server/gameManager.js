@@ -373,6 +373,13 @@ class GameManager {
         }
         FULL_QUIZ_LIST[index] = quiz;
     }
+
+    deleteAllQuizzes() {
+        const count = FULL_QUIZ_LIST.length;
+        FULL_QUIZ_LIST.length = 0; // Clear array
+        console.log(`🗑️ All ${count} quizzes deleted`);
+        return count;
+    }
 }
 
 module.exports = GameManager;

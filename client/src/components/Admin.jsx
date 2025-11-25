@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Trash2, Edit2, Plus, Sparkles, Download, X, Check, Settings } from 'lucide-react';
+import { Upload, Trash2, Edit2, Plus, Sparkles, Download, X, Check, Settings, AlertTriangle } from 'lucide-react';
 import ApiKeySettings from './ApiKeySettings';
 
 const API_URL = 'http://localhost:3000/api';
@@ -14,6 +14,7 @@ export default function Admin({ onClose }) {
     const [aiGenerating, setAiGenerating] = useState(false);
     const [showApiSettings, setShowApiSettings] = useState(false);
     const [generatedQuizzes, setGeneratedQuizzes] = useState([]);
+    const [selectedQuizzes, setSelectedQuizzes] = useState(new Set());
 
     useEffect(() => {
         loadQuizzes();
@@ -147,6 +148,7 @@ export default function Admin({ onClose }) {
 
         setAiGenerating(true);
         setGeneratedQuizzes([]);
+        setSelectedQuizzes(new Set());
 
         try {
             const prompt = `당신은 재미있는 한국어 말장난 퀴즈를 만드는 전문가입니다.
@@ -231,19 +233,79 @@ export default function Admin({ onClose }) {
         }
     };
 
-    const handleSaveGeneratedQuizzes = async () => {
-        if (generatedQuizzes.length === 0) {
-            alert('저장할 퀴즈가 없습니다');
+    const handleDeleteAll = async () => {
+        if (!confirm(`⚠️ 경고: 모든 퀴즈(${quizzes.length}개)를 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다!`)) {
+            return;
+        }
+
+        if (!confirm('정말로 모든 퀴즈를 삭제하시겠습니까? 다시 한 번 확인합니다.')) {
             return;
         }
 
         try {
-            console.log('📤 Saving quizzes:', generatedQuizzes);
+            const response = await fetch(`${API_URL}/quizzes`, { method: 'DELETE' });
+            const data = await response.json();
+            if (data.success) {
+                alert(`✅ ${data.count}개의 퀴즈가 모두 삭제되었습니다`);
+                loadQuizzes();
+            }
+        } catch (error) {
+            alert('전체 삭제 실패: ' + error.message);
+        }
+    };
+
+    const handleRemoveGeneratedQuiz = (index) => {
+        setGeneratedQuizzes(prev => prev.filter((_, i) => i !== index));
+        setSelectedQuizzes(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(index);
+            // 인덱스 재조정
+            const adjusted = new Set();
+            newSet.forEach(i => {
+                if (i > index) adjusted.add(i - 1);
+                else adjusted.add(i);
+            });
+            return adjusted;
+        });
+    };
+
+    const toggleSelectQuiz = (index) => {
+        setSelectedQuizzes(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(index)) {
+                newSet.delete(index);
+            } else {
+                newSet.add(index);
+            }
+            return newSet;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedQuizzes.size === generatedQuizzes.length) {
+            setSelectedQuizzes(new Set());
+        } else {
+            setSelectedQuizzes(new Set(generatedQuizzes.map((_, i) => i)));
+        }
+    };
+
+    const handleSaveGeneratedQuizzes = async () => {
+        const quizzesToSave = selectedQuizzes.size > 0
+            ? generatedQuizzes.filter((_, i) => selectedQuizzes.has(i))
+            : generatedQuizzes;
+
+        if (quizzesToSave.length === 0) {
+            alert('저장할 퀴즈를 선택하세요');
+            return;
+        }
+
+        try {
+            console.log('📤 Saving quizzes:', quizzesToSave);
 
             const response = await fetch(`${API_URL}/quizzes/bulk`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ quizzes: generatedQuizzes })
+                body: JSON.stringify({ quizzes: quizzesToSave })
             });
 
             const data = await response.json();
@@ -259,6 +321,7 @@ export default function Admin({ onClose }) {
                     alert(`✅ ${data.results.success}개의 퀴즈가 추가되었습니다!`);
                 }
                 setGeneratedQuizzes([]);
+                setSelectedQuizzes(new Set());
                 setAiPrompt('');
                 loadQuizzes();
                 setActiveTab('list');
@@ -311,9 +374,19 @@ export default function Admin({ onClose }) {
                         <div className="space-y-3">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-xl font-bold text-white">전체 퀴즈: {quizzes.length}개</h3>
-                                <button onClick={loadQuizzes} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
-                                    새로고침
-                                </button>
+                                <div className="flex gap-2">
+                                    <button onClick={loadQuizzes} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                                        새로고침
+                                    </button>
+                                    <button
+                                        onClick={handleDeleteAll}
+                                        disabled={quizzes.length === 0}
+                                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition disabled:bg-gray-600 disabled:cursor-not-allowed flex items-center gap-2"
+                                    >
+                                        <Trash2 size={18} />
+                                        전체 삭제
+                                    </button>
+                                </div>
                             </div>
                             {loading ? (
                                 <p className="text-gray-400 text-center py-8">로딩 중...</p>
@@ -518,25 +591,60 @@ export default function Admin({ onClose }) {
                             {generatedQuizzes.length > 0 && (
                                 <div className="bg-green-900/30 border-2 border-green-500/50 rounded-xl p-6">
                                     <div className="flex justify-between items-center mb-4">
-                                        <h4 className="text-white font-bold text-xl">생성된 퀴즈 ({generatedQuizzes.length}개)</h4>
+                                        <div className="flex items-center gap-4">
+                                            <h4 className="text-white font-bold text-xl">
+                                                생성된 퀴즈 ({generatedQuizzes.length}개)
+                                            </h4>
+                                            <label className="flex items-center gap-2 cursor-pointer bg-gray-700 px-3 py-1 rounded-lg hover:bg-gray-600 transition">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedQuizzes.size === generatedQuizzes.length && generatedQuizzes.length > 0}
+                                                    onChange={toggleSelectAll}
+                                                    className="w-4 h-4 cursor-pointer"
+                                                />
+                                                <span className="text-white text-sm font-semibold">전체 선택</span>
+                                            </label>
+                                            {selectedQuizzes.size > 0 && (
+                                                <span className="text-yellow-400 text-sm font-semibold">
+                                                    {selectedQuizzes.size}개 선택됨
+                                                </span>
+                                            )}
+                                        </div>
                                         <button
                                             onClick={handleSaveGeneratedQuizzes}
                                             className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-bold flex items-center gap-2"
                                         >
                                             <Check size={20} />
-                                            모두 저장
+                                            {selectedQuizzes.size > 0 ? `선택한 ${selectedQuizzes.size}개 저장` : '모두 저장'}
                                         </button>
                                     </div>
                                     <div className="space-y-3 max-h-96 overflow-y-auto">
                                         {generatedQuizzes.map((quiz, idx) => (
-                                            <div key={idx} className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-                                                <h5 className="text-white font-bold text-lg mb-2">{idx + 1}. {quiz.q}</h5>
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    {quiz.a.map((ans, i) => (
-                                                        <div key={i} className={`px-3 py-2 rounded-lg ${i === quiz.c ? 'bg-green-600/30 border border-green-500' : 'bg-gray-700'}`}>
-                                                            <span className="text-gray-300">{i + 1}. {ans}</span>
+                                            <div key={idx} className="bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-purple-500 transition">
+                                                <div className="flex items-start gap-3">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedQuizzes.has(idx)}
+                                                        onChange={() => toggleSelectQuiz(idx)}
+                                                        className="w-5 h-5 mt-1 cursor-pointer"
+                                                    />
+                                                    <div className="flex-1">
+                                                        <h5 className="text-white font-bold text-lg mb-2">{idx + 1}. {quiz.q}</h5>
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            {quiz.a.map((ans, i) => (
+                                                                <div key={i} className={`px-3 py-2 rounded-lg ${i === quiz.c ? 'bg-green-600/30 border border-green-500' : 'bg-gray-700'}`}>
+                                                                    <span className="text-gray-300">{i + 1}. {ans}</span>
+                                                                </div>
+                                                            ))}
                                                         </div>
-                                                    ))}
+                                                    </div>
+                                                    <button
+                                                        onClick={() => handleRemoveGeneratedQuiz(idx)}
+                                                        className="p-2 bg-red-600/80 text-white rounded-lg hover:bg-red-700 transition flex-shrink-0"
+                                                        title="이 퀴즈 삭제"
+                                                    >
+                                                        <X size={18} />
+                                                    </button>
                                                 </div>
                                             </div>
                                         ))}
